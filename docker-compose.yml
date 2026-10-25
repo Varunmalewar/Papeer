@@ -1,0 +1,38 @@
+services:
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    image: papeer-web:latest
+    container_name: papeer-web
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./web/.env.local
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+
+  api:
+    build: .
+    image: papeer:latest
+    container_name: papeer-api
+    command: ["uv", "run", "--no-sync", "uvicorn", "api.main:app",
+              "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    restart: unless-stopped
+    volumes:
+      - embedding_cache:/app/embedding_cache
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=8)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  embedding_cache:

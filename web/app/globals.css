@@ -1,0 +1,255 @@
+@import "tailwindcss";
+
+/* Inter as the app-wide sans font (loaded via next/font in layout). */
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  --color-astra-100: #e7efff;
+  --color-astra-200: #c9d9ff;
+  --color-astra-300: #a8c2ff;
+  --color-astra-400: #82a4ff;
+  --color-astra-500: #5b7dff;
+  --color-astra-600: #4361e0;
+
+  --color-ink-950: #05070d;
+  --color-ink-900: #070a12;
+  --color-ink-800: #0b1020;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    background-color: #05070d;
+  }
+
+  ::selection {
+    background: rgba(130, 164, 255, 0.35);
+    color: #fff;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 170, 255, 0.22) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(148, 170, 255, 0.2);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(148, 170, 255, 0.32);
+  }
+}
+
+/* Dark palette for the Neon Auth UI (activated by the `dark` class). */
+:root.dark {
+  --background: #0a0e18;
+  --foreground: #e8eefc;
+  --card: rgba(255, 255, 255, 0.04);
+  --card-foreground: #e8eefc;
+  --popover: #0d1322;
+  --popover-foreground: #e8eefc;
+  --primary: #a8c2ff;
+  --primary-foreground: #05070d;
+  --secondary: rgba(255, 255, 255, 0.06);
+  --secondary-foreground: #e8eefc;
+  --muted: rgba(255, 255, 255, 0.06);
+  --muted-foreground: #93a3bf;
+  --accent: rgba(255, 255, 255, 0.08);
+  --accent-foreground: #e8eefc;
+  --destructive: #f87171;
+  --destructive-foreground: #fecaca;
+  --border: rgba(148, 170, 255, 0.14);
+  --input: rgba(148, 170, 255, 0.16);
+  --ring: #82a4ff;
+  --neon-radius: 0.85rem;
+}
+
+/* Reusable glass surface for panels, cards and the composer. */
+.glass {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.055) 0%,
+    rgba(255, 255, 255, 0.022) 100%
+  );
+  border: 1px solid rgba(148, 170, 255, 0.12);
+  backdrop-filter: blur(22px) saturate(140%);
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
+}
+
+.glass-strong {
+  background: rgba(9, 13, 24, 0.72);
+  border: 1px solid rgba(148, 170, 255, 0.12);
+  backdrop-filter: blur(28px) saturate(150%);
+  -webkit-backdrop-filter: blur(28px) saturate(150%);
+}
+
+.text-gradient {
+  background: linear-gradient(100deg, #ffffff 10%, #d6e3ff 45%, #82a4ff 95%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@keyframes nebula-drift {
+  from {
+    transform: translate3d(-2%, -1%, 0) scale(1);
+    opacity: 0.72;
+  }
+  to {
+    transform: translate3d(3%, 2%, 0) scale(1.08);
+    opacity: 0.95;
+  }
+}
+
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Markdown answer styling — reads like a document, prettier tables */
+.markdown-body {
+  line-height: 1.6;
+  word-break: break-word;
+  text-align: left;
+  color: #d7e0f2;
+}
+
+.markdown-body p {
+  margin: 0 0 0.5rem;
+}
+.markdown-body p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body strong {
+  font-weight: 650;
+  color: #f2f6ff;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4 {
+  font-weight: 600;
+  color: #f2f6ff;
+  margin: 0.8rem 0 0.35rem;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+.markdown-body h1:first-child,
+.markdown-body h2:first-child,
+.markdown-body h3:first-child,
+.markdown-body h4:first-child {
+  margin-top: 0;
+}
+.markdown-body h1 { font-size: 1.18rem; }
+.markdown-body h2 { font-size: 1.08rem; }
+.markdown-body h3,
+.markdown-body h4 { font-size: 0.97rem; }
+
+.markdown-body ul,
+.markdown-body ol {
+  margin: 0.4rem 0;
+  padding-left: 1.2rem;
+}
+.markdown-body ul { list-style: disc; }
+.markdown-body ol { list-style: decimal; }
+.markdown-body li {
+  margin: 0.18rem 0;
+}
+.markdown-body li::marker {
+  color: #82a4ff;
+}
+
+.markdown-body table {
+  border-collapse: collapse;
+  margin: 0.6rem 0;
+  font-size: 12.5px;
+  display: block;
+  overflow-x: auto;
+}
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid rgba(148, 170, 255, 0.16);
+  padding: 5px 10px;
+  text-align: left;
+  white-space: nowrap;
+  min-width: 3rem;
+}
+.markdown-body th {
+  background: rgba(148, 170, 255, 0.09);
+  font-weight: 600;
+  color: #eef3ff;
+}
+.markdown-body tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.markdown-body code {
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  font-size: 0.85em;
+  background: rgba(148, 170, 255, 0.12);
+  color: #dbe6ff;
+  padding: 0.08rem 0.32rem;
+  border-radius: 5px;
+}
+.markdown-body pre {
+  background: rgba(4, 7, 15, 0.75);
+  border: 1px solid rgba(148, 170, 255, 0.12);
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+  overflow-x: auto;
+  margin: 0.5rem 0;
+}
+.markdown-body pre code {
+  background: transparent;
+  padding: 0;
+  color: #cfe0ff;
+}
+
+.markdown-body blockquote {
+  border-left: 2px solid rgba(130, 164, 255, 0.55);
+  padding-left: 0.7rem;
+  margin: 0.5rem 0;
+  color: #a9b6cf;
+}
+
+.markdown-body a {
+  color: #a8c2ff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.markdown-body a:hover {
+  color: #c9d9ff;
+}
+
+.markdown-body hr {
+  border: 0;
+  border-top: 1px solid rgba(148, 170, 255, 0.14);
+  margin: 0.7rem 0;
+}
