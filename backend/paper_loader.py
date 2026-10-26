@@ -10,6 +10,8 @@ from langchain_community.document_loaders import PyMuPDFLoader, TextLoader, WebB
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+from backend.text_clean import _looks_like_table, clean_pages
+
 _ARXIV_ID_RE = re.compile(r"(\d{4}\.\d{4,5}(?:v\d+)?)")
 
 CHUNK_SIZE = 1000
@@ -29,20 +31,6 @@ _md_splitter = RecursiveCharacterTextSplitter.from_language(
 
 _PARENT_CHARS = int(os.environ.get("PAPEER_PARENT_CHARS", "2400"))
 _TABLE_CHARS = int(os.environ.get("PAPEER_TABLE_CHARS", "6000"))
-
-
-def _looks_like_table(para: str) -> bool:
-    """Heuristic: several lines with ≥4 digit chars, tabs, or wide gaps —
-    typical of an extracted results table."""
-    lines = [l for l in para.splitlines() if l.strip()]
-    if len(lines) < 3:
-        return False
-    hits = sum(
-        1
-        for l in lines
-        if len(re.findall(r"\d", l)) >= 4 or l.count("\t") >= 2 or "   " in l
-    )
-    return hits >= max(2, len(lines) // 2)
 
 
 def _parent_blocks(text: str) -> list[str]:
@@ -106,6 +94,14 @@ def load_pdf(
 ) -> list[Document]:
     raw_docs = PyMuPDFLoader(file_path).load()
     resolved_title = title or Path(file_path).stem
+    # P0: clean per-page Documents before chunking; pages are never concatenated
+    # so every surviving chunk keeps its original page metadata.
+    pages = [
+        (int(doc.metadata.get("page", 0)), doc.page_content or "")
+        for doc in raw_docs
+    ]
+    for doc, (_page, text) in zip(raw_docs, clean_pages(pages)):
+        doc.page_content = text
     docs = _small_to_big(raw_docs, resolved_title)
     if figures_ctx is not None:
         try:

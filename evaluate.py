@@ -36,6 +36,11 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from backend.paper_loader import load_document
 from backend.rag_graph import build_graph
+from backend.text_clean import (
+    CTX_BOILERPLATE_MIN_PAGES,
+    _boilerplate_lines,
+    _strip_boilerplate,
+)
 from backend.vector_store import add_paper
 
 load_dotenv(override=True)  # .env is source of truth - overrides stray env vars
@@ -67,7 +72,6 @@ CTX_MIN_ALPHA_RATIO = 0.55
 CTX_MAX_DIGIT_RATIO = 0.35
 CTX_MAX_CITATION_DENSITY = 4.0        # per 100 words
 CTX_MIN_SENTENCE_PUNCT_PER_60W = 1.0
-CTX_BOILERPLATE_MIN_PAGES = 3
 CTX_MAX_CHARS = 1800
 CTX_HEADING_RE = re.compile(
     r"^\s*(?:\d+\.?\s*)?(references|bibliography|acknowledg|appendix|supplementary)\b",
@@ -432,32 +436,9 @@ def _sentences(text: str) -> list[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
-def _norm_line(line: str) -> str:
-    return re.sub(r"\s+", " ", line).strip().lower()
-
-
 # ------------------------------------------------------------------------------
 # Context filter
 # ------------------------------------------------------------------------------
-def _boilerplate_lines(page_texts: dict[int, list[str]]) -> set[str]:
-    counts: Counter[str] = Counter()
-    for _page, texts in page_texts.items():
-        seen = set()
-        for text in texts:
-            for line in text.splitlines():
-                norm = _norm_line(line)
-                if 3 <= len(norm) <= 120 and re.search(r"[a-z]{3}", norm):
-                    seen.add(norm)
-        for norm in seen:
-            counts[norm] += 1
-    return {norm for norm, count in counts.items() if count >= CTX_BOILERPLATE_MIN_PAGES}
-
-
-def _strip_boilerplate(text: str, boiler: set[str]) -> str:
-    lines = [ln for ln in text.splitlines() if _norm_line(ln) not in boiler]
-    return "\n".join(lines).strip()
-
-
 def _strip_reference_tail(text: str) -> tuple[str, bool]:
     """Cut a parent block at the first bibliography entry line.
 
