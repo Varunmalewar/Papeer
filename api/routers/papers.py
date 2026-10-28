@@ -9,12 +9,12 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Response, UploadFile
 
 from ..auth import require_api_key, require_user
 from ..deps import get_graph  # noqa: F401 â€” keeps graph warm on import order
 from ..rate_limit import rate_limit
-from ..schemas import PapersResponse, StatusResponse
+from ..schemas import JobResponse, JobStatus, PapersResponse, StatusResponse
 from backend.ingestion import (
     delete_paper_assets,
     ingest_arxiv,
@@ -48,59 +48,87 @@ def _validate_upload(ext: str, data: bytes, filename: str) -> None:
             )
 
 
-@router.post("/upload",
+# shortcut: in-memory job table, one API process; a restart loses it (the client then
+# sees 404 and tells the user). Upgrade to a DB table when running >1 replica.
+_JOBS: dict[str, dict] = {}
+_MAX_JOBS = 200
+
+
+def _start_job(background: BackgroundTasks, user_id: str, session_id: str, work) -> JobResponse:
+    """Run `work()` after the response is sent; the client polls /papers/jobs/{id}."""
+    job_id = uuid.uuid4().hex
+    job = {"user": user_id, "state": "processing", "chunks": None, "error": None}
+    _JOBS[job_id] = job
+    while len(_JOBS) > _MAX_JOBS:
+        _JOBS.pop(next(iter(_JOBS)))
+
+    def run() -> None:
+        from backend.vector_store import count_chunks
+
+        try:
+            work()
+            job.update(state="done", chunks=count_chunks(session_id, user_id=user_id))
+        except Exception as e:  # noqa: BLE001 - reported to the client through the job
+            job.update(state="error", error=str(e))
+
+    background.add_task(run)
+    return JobResponse(job_id=job_id, status="processing")
+
+
+@router.post("/upload", status_code=202, response_model=JobResponse,
              dependencies=[Depends(require_api_key), Depends(rate_limit)])
-def upload_paper(session_id: str, file: UploadFile = File(...),
-                 user_id: str = Depends(require_user)) -> StatusResponse:
+def upload_paper(session_id: str, background: BackgroundTasks, file: UploadFile = File(...),
+                 user_id: str = Depends(require_user)) -> JobResponse:
     ext = Path(file.filename or "").suffix.lower()
     if ext not in _ALLOWED_EXTS:
         raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext}")
     data = file.file.read()
     if len(data) > _MAX_BYTES:
         raise HTTPException(status_code=413, detail="File too large (max 50MB).")
-    _validate_upload(ext, data, file.filename or "file")
-    try:
-        if ext == ".pdf":
-            docs = ingest_pdf_bytes(data, file.filename or "file.pdf", session_id, user_id)
-        else:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
-                tmp.write(data)
-                tmp_path = tmp.name
-            try:
-                from backend.paper_loader import load_document
-                from backend.vector_store import add_paper
+    filename = file.filename or "file"
+    _validate_upload(ext, data, filename)
 
-                docs = load_document(tmp_path)
-                for doc in docs:
-                    doc.metadata["title"] = Path(file.filename).stem
-                add_paper(docs, session_id, user_id=user_id)
-            finally:
-                Path(tmp_path).unlink(missing_ok=True)
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Could not extract text from '{file.filename}': {e}",
-        )
-    if not docs:
-        raise HTTPException(
-            status_code=400,
-            detail=f"No readable text found in '{file.filename}'.",
-        )
-    from backend.vector_store import count_chunks
+    def work() -> None:
+        try:
+            if ext == ".pdf":
+                docs = ingest_pdf_bytes(data, filename, session_id, user_id)
+            else:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+                    tmp.write(data)
+                    tmp_path = tmp.name
+                try:
+                    from backend.paper_loader import load_document
+                    from backend.vector_store import add_paper
 
-    return StatusResponse(chunks=count_chunks(session_id, user_id=user_id))
+                    docs = load_document(tmp_path)
+                    for doc in docs:
+                        doc.metadata["title"] = Path(filename).stem
+                    add_paper(docs, session_id, user_id=user_id)
+                finally:
+                    Path(tmp_path).unlink(missing_ok=True)
+        except Exception as e:
+            raise RuntimeError(f"Could not extract text from '{filename}': {e}") from e
+        if not docs:
+            raise RuntimeError(f"No readable text found in '{filename}'.")
+
+    return _start_job(background, user_id, session_id, work)
 
 
-@router.post("/arxiv",
+@router.post("/arxiv", status_code=202, response_model=JobResponse,
              dependencies=[Depends(require_api_key), Depends(rate_limit)])
-def upload_arxiv(session_id: str, query: str,
-                 user_id: str = Depends(require_user)) -> StatusResponse:
-    from backend.vector_store import count_chunks
+def upload_arxiv(session_id: str, query: str, background: BackgroundTasks,
+                 user_id: str = Depends(require_user)) -> JobResponse:
+    return _start_job(background, user_id, session_id, lambda: ingest_arxiv(query, session_id, user_id))
 
-    ingest_arxiv(query, session_id, user_id)
-    return StatusResponse(chunks=count_chunks(session_id, user_id=user_id))
+
+# No rate_limit here: the browser polls this every few seconds and the limiter's
+# bucket is shared by every user behind the web proxy's API key.
+@router.get("/jobs/{job_id}", response_model=JobStatus, dependencies=[Depends(require_api_key)])
+def job_status(job_id: str, user_id: str = Depends(require_user)) -> JobStatus:
+    job = _JOBS.get(job_id)
+    if not job or job["user"] != user_id:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return JobStatus(state=job["state"], chunks=job["chunks"], error=job["error"])
 
 
 @router.post("/webpage",

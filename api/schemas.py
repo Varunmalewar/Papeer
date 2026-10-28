@@ -46,3 +46,14 @@ class PapersResponse(BaseModel):
 
 class StatusResponse(BaseModel):
     chunks: int
+
+
+class JobResponse(BaseModel):
+    job_id: str
+    status: str
+
+
+class JobStatus(BaseModel):
+    state: str  # processing | done | error
+    chunks: int | None = None
+    error: str | None = None

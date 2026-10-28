@@ -9,6 +9,7 @@ import "katex/dist/katex.min.css";
 import { authClient } from "@/lib/auth/client";
 import {
   apiArxiv,
+  apiJob,
   apiBtw,
   apiChatStream,
   apiDeleteSessionVectors,
@@ -476,6 +477,29 @@ export default function ChatPage() {
       .catch(() => setPapers(null));
   }
 
+  /** Poll a background ingestion job (every 3 s, up to ~10 min) and report when it ends. */
+  async function trackJob(jobId: string, label: string) {
+    for (let i = 0; i < 200; i++) {
+      await new Promise((r) => setTimeout(r, 3000));
+      try {
+        const j = await apiJob(jobId);
+        if (j.state === "done") {
+          addFlash("success", `Added: ${label} (${j.chunks} chunks indexed)`);
+          refreshPapers();
+          return;
+        }
+        if (j.state === "error") {
+          addFlash("error", `Failed: ${label} — ${j.error}`);
+          return;
+        }
+      } catch (e) {
+        addFlash("error", `Failed: ${label} — ${(e as Error).message}`);
+        return;
+      }
+    }
+    addFlash("error", `Still processing: ${label}. Refresh the document list in a few minutes.`);
+  }
+
   async function uploadFiles(files: File[]) {
     const target = libraryId ?? activeId;
     if (!target || files.length === 0) return;
@@ -484,7 +508,8 @@ export default function ChatPage() {
       for (const f of files) {
         try {
           const r = await apiUpload(target, f);
-          addFlash("success", `Added: ${f.name} (${r.chunks} chunks indexed)`);
+          addFlash("info", `Processing: ${f.name} …`);
+          void trackJob(r.job_id, f.name);
         } catch (e) {
           addFlash("error", `Failed: ${f.name} — ${(e as Error).message}`);
         }
@@ -541,9 +566,9 @@ export default function ChatPage() {
     setBusy(true);
     try {
       const r = await apiArxiv(target, q);
-      addFlash("success", `Loaded from ArXiv (${r.chunks} chunks)`);
+      addFlash("info", `Processing ArXiv: ${q.slice(0, 40)} …`);
+      void trackJob(r.job_id, `ArXiv ${q.slice(0, 40)}`);
       setArxivInput("");
-      refreshPapers();
     } catch (e) {
       addFlash("error", `Failed: ${(e as Error).message}`);
     } finally {
