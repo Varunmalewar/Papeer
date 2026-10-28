@@ -1,0 +1,143 @@
+{
+  "NIPS-2017-attention-is-all-you-need-Paper.pdf": {
+    "filename": "NIPS-2017-attention-is-all-you-need-Paper.pdf",
+    "sha256": "d87d482d5ae7960e2e43d7dd6d21377e60e73e8fce1bf2a01aff7aca8a08c537",
+    "size": 569417,
+    "mtime": 1792991962,
+    "pairs": [
+      {
+        "input": "How are the Transformer's encoder and decoder stacks structured, and what is the output dimension of all sub-layers?",
+        "expected_output": "The encoder is a stack of N = 6 identical layers, each with two sub-layers: a multi-head self-attention mechanism and a simple, position-wise fully connected feed-forward network. The decoder is also a stack of N = 6 identical layers. In addition to the two encoder sub-layers, it inserts a third sub-layer that performs multi-head attention over the output of the encoder stack. A residual connection surrounds each sub-layer, followed by layer normalization, so the output of each sub-layer is LayerNorm(x + Sublayer(x)). All sub-layers and embedding layers produce outputs of dimension d_model = 512 [Attention Is All You Need, Page 3].",
+        "source_page": 3
+      },
+      {
+        "input": "How is Scaled Dot-Product Attention computed, and why are the dot products scaled by 1/sqrt(d_k)?",
+        "expected_output": "Attention(Q, K, V) = softmax(QK^T / sqrt(d_k)) V. The dot products of the query with all keys are divided by sqrt(d_k), and a softmax is applied to obtain the weights on the values. The scaling is used because for large values of d_k the dot products grow large in magnitude, pushing the softmax function into regions where it has extremely small gradients. Additive attention outperforms dot-product attention without scaling for larger values of d_k [Attention Is All You Need, Page 4].",
+        "source_page": 4
+      },
+      {
+        "input": "How many attention heads does the Transformer use, and what are the per-head dimensions in multi-head attention?",
+        "expected_output": "The Transformer employs h = 8 parallel attention layers, or heads. For each head, d_k = d_v = d_model/h = 64. Because of the reduced dimension of each head, the total computational cost is similar to that of single-head attention with full dimensionality [Attention Is All You Need, Page 5].",
+        "source_page": 5
+      },
+      {
+        "input": "In what three ways does the Transformer use multi-head attention?",
+        "expected_output": "First, in encoder-decoder attention layers, the queries come from the previous decoder layer and the memory keys and values come from the output of the encoder, so every decoder position can attend over all positions in the input sequence. Second, the encoder contains self-attention layers in which keys, values and queries all come from the output of the previous encoder layer, so each encoder position can attend to all positions in the previous layer. Third, self-attention layers in the decoder let each position attend to all decoder positions up to and including itself, with illegal connections masked out by setting the corresponding softmax inputs to −∞ to preserve the auto-regressive property [Attention Is All You Need, Page 5].",
+        "source_page": 5
+      },
+      {
+        "input": "What positional encoding does the Transformer use, and why was it chosen over learned positional embeddings?",
+        "expected_output": "The Transformer uses sine and cosine functions of different frequencies: PE(pos,2i) = sin(pos/10000^(2i/d_model)) and PE(pos,2i+1) = cos(pos/10000^(2i/d_model)). The wavelengths form a geometric progression from 2π to 10000·2π. The authors hypothesized this would let the model easily learn to attend by relative positions, since for any fixed offset k, PE_(pos+k) can be represented as a linear function of PE_pos. Learned positional embeddings gave nearly identical results (Table 3 row (E)), and the sinusoidal version was chosen because it may allow the model to extrapolate to sequence lengths longer than those seen during training [Attention Is All You Need, Page 6].",
+        "source_page": 6
+      },
+      {
+        "input": "According to Table 1, how do self-attention, recurrent and convolutional layers compare in complexity per layer, sequential operations and maximum path length?",
+        "expected_output": "Self-attention has complexity per layer O(n^2·d), O(1) sequential operations and O(1) maximum path length. Recurrent layers have O(n·d^2) complexity, O(n) sequential operations and O(n) maximum path length. Convolutional layers have O(k·n·d^2) complexity, O(1) sequential operations and O(log_k(n)) maximum path length. Restricted self-attention has O(r·n·d) complexity, O(1) sequential operations and O(n/r) maximum path length. Self-attention layers are faster than recurrent layers when the sequence length n is smaller than the representation dimensionality d [Attention Is All You Need, Page 6].",
+        "source_page": 6
+      },
+      {
+        "input": "What hardware and training schedule were used for the base and big Transformer models?",
+        "expected_output": "The models were trained on one machine with 8 NVIDIA P100 GPUs. For the base models, each training step took about 0.4 seconds, and they were trained for a total of 100,000 steps, or 12 hours. For the big models, step time was 1.0 seconds, and they were trained for 300,000 steps, or 3.5 days [Attention Is All You Need, Page 7].",
+        "source_page": 7
+      },
+      {
+        "input": "What optimizer settings and learning rate schedule were used to train the Transformer?",
+        "expected_output": "The Adam optimizer was used with β1 = 0.9, β2 = 0.98 and ε = 10^−9. The learning rate followed lrate = d_model^−0.5 · min(step_num^−0.5, step_num · warmup_steps^−1.5). This increases the learning rate linearly for the first warmup_steps training steps and decreases it thereafter proportionally to the inverse square root of the step number, with warmup_steps = 4000 [Attention Is All You Need, Page 7].",
+        "source_page": 7
+      },
+      {
+        "input": "What BLEU scores does the Transformer (big) achieve on WMT 2014 English-to-German and English-to-French, and how does this compare with previous models?",
+        "expected_output": "On WMT 2014 English-to-German, the Transformer (big) achieves a new state-of-the-art BLEU score of 28.4, outperforming the best previously reported models, including ensembles, by more than 2.0 BLEU. Training took 3.5 days on 8 P100 GPUs. On WMT 2014 English-to-French, it achieves a BLEU score of 41.0, outperforming all previously published single models at less than 1/4 the training cost of the previous state-of-the-art model. The big English-to-French model used dropout rate P_drop = 0.1 instead of 0.3 [Attention Is All You Need, Page 8].",
+        "source_page": 8
+      },
+      {
+        "input": "What do the model variation experiments in Table 3 show about the number of attention heads, the attention key size d_k, and dropout?",
+        "expected_output": "In rows (A), keeping computation constant, single-head attention is 0.9 BLEU worse than the best setting, and quality also drops off with too many heads. In rows (B), reducing the attention key size d_k hurts model quality, which suggests that determining compatibility is not easy and that a more sophisticated compatibility function than dot product may be beneficial. In rows (C) and (D), bigger models are better and dropout is very helpful in avoiding over-fitting [Attention Is All You Need, Page 8].",
+        "source_page": 8
+      },
+      {
+        "input": "In the left diagram of Figure 2 (Scaled Dot-Product Attention), in what order do the blocks appear from the inputs Q and K up to the output?",
+        "expected_output": "Q and K go into a MatMul, followed by Scale, then Mask (opt.), then SoftMax, and finally a second MatMul that also takes V.",
+        "source_page": 4
+      },
+      {
+        "input": "In the right diagram of Figure 2 (Multi-Head Attention), how many Linear blocks feed the Scaled Dot-Product Attention blocks, and which inputs go into them?",
+        "expected_output": "Three Linear blocks feed the Scaled Dot-Product Attention blocks, one each for the inputs V, K and Q.",
+        "source_page": 4
+      },
+      {
+        "input": "Based on the Multi-Head Attention diagram in Figure 2 (right side), what operation is performed on the outputs of the parallel Scaled Dot-Product Attention blocks before they reach the final Linear layer?",
+        "expected_output": "The outputs of the parallel Scaled Dot-Product Attention blocks are concatenated (Concat) before the final Linear layer.",
+        "source_page": 4
+      },
+      {
+        "input": "In Figure 1, which blocks does the decoder stack contain, in order from the Output Embedding up to the Linear layer?",
+        "expected_output": "The decoder stack contains Masked Multi-Head Attention, Add & Norm, Multi-Head Attention, Add & Norm, Feed Forward and Add & Norm, repeated N times, followed by the Linear layer.",
+        "source_page": 3
+      },
+      {
+        "input": "In Figure 1, which sub-layer of the decoder receives the output of the encoder stack?",
+        "expected_output": "The second Multi-Head Attention block in the decoder (the one after the Masked Multi-Head Attention) receives the output of the encoder stack.",
+        "source_page": 3
+      }
+    ]
+  },
+  "Openclaw_Research_Report.pdf": {
+    "filename": "Openclaw_Research_Report.pdf",
+    "sha256": "3bc9c0fe983c58bbbe390df8b8c2e5d8e13a599ebdb6bbd48c4a6fe24b605da9",
+    "size": 940600,
+    "mtime": 1792992270,
+    "pairs": [
+      {
+        "input": "What is the naming timeline of the project from its launch through its second rename?",
+        "expected_output": "The project launched as \"Clawdbot\" on November 24, 2025, with a lobster mascot named \"Clawd\". On January 27, 2026, Anthropic sent a trademark notice to creator Peter Steinberger because \"Clawd\" is similar to \"Claude\", and the project was rebranded to \"Moltbot\" the same day. On January 30, 2026, just three days later, it was renamed again to \"OpenClaw\", while the core functionality and codebase remained unchanged [Moltbot: Comprehensive Analysis Report, Page 2].",
+        "source_page": 2
+      },
+      {
+        "input": "What does Moltbot's persistent memory retain across sessions, and how is it stored?",
+        "expected_output": "Moltbot maintains long-term memory across sessions using local file storage, enabling context retention that spans days or weeks. It remembers previous conversations and interaction history, user preferences and working patterns, ongoing project context and state, custom instructions and behavioral guidelines, and file locations and system configurations. This turns the interaction model from stateless question-answering into stateful collaboration [Moltbot: Comprehensive Analysis Report, Page 3].",
+        "source_page": 3
+      },
+      {
+        "input": "Which LLM backends does Moltbot support, and which model do user reviews say performs better for the assistant role?",
+        "expected_output": "Moltbot is a model-agnostic platform supporting Anthropic Claude (Sonnet, Opus), OpenAI GPT-4 and GPT-4 Turbo, Google Gemini, local models via Ollama, local models via LM Studio, and AWS Bedrock. Users can switch between providers without reconfiguring the entire setup. User reviews indicate Claude performs significantly better than GPT for the assistant role [Moltbot: Comprehensive Analysis Report, Page 5].",
+        "source_page": 5
+      },
+      {
+        "input": "What deployment options does Moltbot support and what do they cost?",
+        "expected_output": "According to Table 3, Moltbot can run on a local Mac/PC at $0 hardware cost, on a dedicated Mac Mini for a $500-800 one-time cost, on a cloud VPS such as DigitalOcean or Linode for $5-24/month, on a Raspberry Pi for a $50-100 one-time cost, or in a Docker container on any Docker host with cost varying by host [Moltbot: Comprehensive Analysis Report, Page 6].",
+        "source_page": 6
+      },
+      {
+        "input": "What GitHub growth metrics does the report cite for Moltbot's viral rise?",
+        "expected_output": "The report cites 9,000 stars in the first 24 hours after going viral, 60,000+ stars within 72 hours (January 24-27, 2026), and 103,000+ stars within 3 months of initial launch. It also reports 17,830 stars gained in a single 24-hour period (January 28-29, 2026), 14,400+ forks, and daily forks jumping from 50 to 3,000 on January 24, 2026 [Moltbot: Comprehensive Analysis Report, Page 10].",
+        "source_page": 10
+      },
+      {
+        "input": "What are Moltbot's minimum and recommended hardware requirements, and what does Windows require?",
+        "expected_output": "The minimum is 4GB RAM, 10GB free storage, any modern processor and a stable internet connection. The recommended configuration is 8GB+ RAM, 20GB+ storage, a multi-core CPU and broadband. Supported hardware includes any Mac (Intel or Apple Silicon), Linux machines, Raspberry Pi (4GB+ RAM models), and VPS/cloud instances with a minimum of 2GB RAM. Windows PCs require WSL2 [Moltbot: Comprehensive Analysis Report, Page 12].",
+        "source_page": 12
+      },
+      {
+        "input": "What is the supply chain risk of Moltbot's skills ecosystem, as shown by the malicious skill proof-of-concept?",
+        "expected_output": "Security researchers uploaded a malicious skill to the ClawdHub marketplace that achieved #1 ranking, and within 8 hours 16 developers across 7 countries downloaded it. Such a skill could execute remote commands, exfiltrate sensitive data, establish persistent backdoors, and spread to connected systems. The report notes there is no rigorous code review or security audit process for community-submitted skills, and that compromised maintainer accounts could push malicious updates to thousands of installations [Moltbot: Comprehensive Analysis Report, Page 16].",
+        "source_page": 16
+      },
+      {
+        "input": "What real-world credential exposure examples does the report give for Moltbot's plaintext storage?",
+        "expected_output": "Moltbot stores sensitive credentials in plaintext JSON and Markdown files within the ~/.moltbot/ directory structure. Real-world exposure examples include a Notion token exposing an entire healthcare company's documentation, a Kubernetes certificate providing privileged cluster access at a fintech company, and 181 unique secrets found in public Moltbot repositories, of which 65 were still valid. Moltbot implements no encryption at rest [Moltbot: Comprehensive Analysis Report, Page 18].",
+        "source_page": 18
+      },
+      {
+        "input": "What are the estimated monthly costs of running Moltbot at low and heavy usage?",
+        "expected_output": "According to Table 6, low usage costs $5 for the LLM API, $0-5 for optional VPS hosting and $0 for additional service APIs, for a total of $5-10 per month. Heavy usage costs $30 for the LLM API, $24 for VPS hosting and $10 for additional service APIs, for a total of $64 per month [Moltbot: Comprehensive Analysis Report, Page 28].",
+        "source_page": 28
+      },
+      {
+        "input": "What overall rating does the report give Moltbot, and what strengths and weaknesses does it list?",
+        "expected_output": "The report gives Moltbot an overall rating of 3.5/5. Strengths: revolutionary autonomous capabilities, privacy-first local architecture, extensible open-source ecosystem, active community and development, multi-platform messaging integration, and cost-effectiveness versus commercial alternatives. Weaknesses: serious security vulnerabilities, high technical complexity, immature codebase quality, significant setup burden, limited documentation consistency, and no commercial support available [Moltbot: Comprehensive Analysis Report, Page 31].",
+        "source_page": 31
+      }
+    ]
+  }
+}

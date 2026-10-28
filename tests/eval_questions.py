@@ -5,12 +5,13 @@ requires every required phrase-group to appear (any one variant per group)
 and none of the forbidden phrases to appear. Prints a markdown table.
 """
 import json
+import os
 import time
 import urllib.request
 
 API = "http://127.0.0.1:8000/chat"
-KEY = "vdasbfjwknffkbknasnuianewijfillnaknndilaicalia"
-USER = "lib-8b30c2e60b41ba79f3b9ffe4575005fe"
+KEY = os.environ["PAPEER_API_KEY"]
+USER = os.environ.get("PAPEER_EVAL_USER", "lib-test-user")
 TITLE = "springer_paper_bg3[1] (1)"
 
 TESTS = [

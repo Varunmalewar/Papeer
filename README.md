@@ -28,7 +28,7 @@ FastAPI — api/
 LangGraph — backend/rag_graph.py
    │  router → premise guard → hybrid retrieve → relevancy → generate → critic
    ▼
-Qdrant Cloud (dense + BM25, parent/child chunks)
+Qdrant Cloud (dense + BM25, reranked chunks)
 Neon Postgres (embedding cache, LangGraph checkpoints)
 Gemini embeddings (gemini-embedding-2, 1536 dims)
 ```
@@ -42,7 +42,7 @@ Gemini embeddings (gemini-embedding-2, 1536 dims)
 | Web | Next.js 16, React 19, TypeScript, Neon Auth |
 | API | FastAPI, Uvicorn, SSE |
 | RAG | LangGraph, LangChain, gpt-4o-mini (temperature 0) |
-| Retrieval | Qdrant Cloud, hybrid dense + BM25, small-to-big expansion |
+| Retrieval | Qdrant Cloud, hybrid dense + BM25 + FlashRank rerank |
 | Storage | Neon Postgres (cache + checkpoints), local blob store for figures |
 | Eval | DeepEval (5 metrics), synthetic goldens |
 
@@ -147,7 +147,6 @@ Open http://localhost:3000.
 | **Premise guard** | Deterministic check corrects false-premise questions using retrieved text, not hardcoded answers |
 | **Embedding cache** | Identical text is never re-embedded; cached in Neon Postgres with a local fallback |
 | **Retrieval caching** | Collection handle and session-document scroll are memoized; first-query latency dropped from 31.7 s to 7.3 s |
-| **Small-to-big retrieval** | Child chunks are matched, parent blocks are sent to the LLM |
 | **Figure pipeline** | Figures are extracted at ingest time, stored as blobs, and served through a proxy route |
 | **Timing instrumentation** | `PAPEER_TIMING=1` prints per-node timings for the whole graph |
 
@@ -168,53 +167,57 @@ Open http://localhost:3000.
 
 ## Evaluation
 
-Papeer includes an automated multi-document RAG evaluation harness (`evaluate.py`) built on [DeepEval](https://github.com/confident-ai/deepeval).
+`evaluate.py` runs a DeepEval harness over hand-labelled questions and writes per-question results to `eval_results_v4.json` (gitignored).
 
 ### Setup
 
-- **Corpus:** 4 research papers (68 pages) placed in `documents/` (PDFs are gitignored)
-- **Goldens:** 35 LLM-synthesized Q/A pairs, filtered for grounding, entities, numbers, duplicates, and bibliography noise (not human-labeled)
-- **Judge:** `gpt-4o-mini` at temperature 0; OpenAI `text-embedding-3-small` for grounding checks only (retrieval keeps Gemini embeddings)
+- **Corpus:** 2 papers in `documents/` (PDFs are gitignored): the Transformer paper and a technical report.
+- **Goldens:** `goldens_manual_pairs.json`, 25 hand-written question/answer pairs with the source page (10 per paper, plus 5 questions about the figures in the Transformer paper).
+- **Generator and judge:** `gpt-4o-mini` (temperature 0). Retrieval uses Gemini embeddings.
+- **Metrics (threshold 0.7):** Contextual Precision, Contextual Recall, Contextual Relevancy, Answer Relevancy, Faithfulness.
 
-### Metrics (threshold: 0.7)
+### Results
 
-| Metric | What It Measures |
-|---|---|
-| **Contextual Precision** | Are the retrieved chunks relevant to the query? |
-| **Contextual Recall** | Does the retrieved context cover all expected information? |
-| **Contextual Relevancy** | Is the context relevant to both the input and the expected output? |
-| **Answer Relevancy** | Does the generated answer actually address the question? |
-| **Faithfulness** | Is the answer grounded in the retrieved context (no hallucination)? |
+Same 20 text questions after each change (single run each):
 
-### Results (v3, 4 documents / 35 goldens)
+| Stage | Ctx Precision | Ctx Recall | Ctx Relevancy | Ans Relevancy | Faithfulness | Gold page retrieved |
+|---|---|---|---|---|---|---|
+| Parent-child chunks, query variants + BM25 rescue | 0.68 | 0.58 | 0.29 | 0.86 | 0.89 * | 9/20 |
+| Plain 1000-character chunks | 0.67 | 0.71 | 0.25 | 0.86 | 0.90 * | 10/20 |
+| Hybrid search + rerank, top 5, relative score cutoff | 0.88 | 0.95 | 0.39 | 0.94 | 0.77 | 19/20 |
+| + Docling for table pages | 0.89 | 0.98 | 0.44 | 0.92 | 0.86 | not measured |
 
-| Document | Ctx Precision | Ctx Recall | Ctx Relevancy | Ans Relevancy | Faithfulness |
-|---|---|---|---|---|---|
-| 2212.10496v1 (8) | 0.90 (7/8) | 0.94 (8/8) | 0.47 (2/8) | 0.89 (6/8) | 0.81 (5/8) |
-| NIPS Attention (10) | 0.98 (10/10) | 0.93 (9/10) | 0.34 (0/10) | 0.93 (9/10) | 0.93 (9/10) |
-| Openclaw Report (9) | 0.91 (8/9) | 0.87 (7/9) | 0.46 (1/9) | 0.97 (9/9) | 0.94 (8/9) |
-| Springer MOCAA* (8) | 0.95 (8/8) | 0.69 (5/8) | 0.53 (2/8) | 0.80 (6/8) | 0.94 (8/8) |
-| **Overall (35)** | **0.94 (33/35)** | **0.86 (29/35)** | **0.45 (5/35)** | **0.90 (30/35)** | **0.91 (30/35)** |
+\* The first two rows include 4 refusals ("the paper does not state this"), which always count as faithful. The new retrieval answers all 20, so its Faithfulness is the honest figure.
 
-Change from the v2 baseline (40 goldens, different document set): Contextual Precision **0.87 → 0.94**, Contextual Recall **0.75 → 0.86**, Answer Relevancy **0.78 → 0.90**, Faithfulness **0.89 → 0.91**, Contextual Relevancy **0.44 → 0.45**.
+Figure questions (5, evaluated separately, with figure chunks indexed):
 
-### Reading the numbers
+| Setup | Ctx Precision | Ctx Recall | Faithfulness |
+|---|---|---|---|
+| Caption text only | 0.67 | 0.64 | 0.73 |
+| + `gpt-4o` figure descriptions at ingestion | 0.81 | 0.72 | 0.77 |
 
-- **Generation is solid:** 0.94 precision and 0.90 answer relevancy; the NIPS paper reaches 0.98 precision and Openclaw 0.97 answer relevancy.
-- **Contextual Relevancy (0.45) is the retrieval bottleneck**, not the answer path. NIPS scores 0.34 because retrieved child chunks often contain surrounding sections; this is the next optimization target.
-- **Springer's 0.69 recall is mostly a measurement artifact:** DeepEval scores child chunks while the generator answers from expanded parent chunks, so facts present in the parent but absent from the child count as misses. Three of the six low-recall cases are this pattern; one was a bad golden synthesized from a reference list (fixed by bibliography-tail stripping).
-- Goldens for 2212/Openclaw/Springer had 1–2 shortfalls (8–9 of 10); NIPS reached 10/10.
+### Limitations
 
-### Running evaluation
+- 20 text questions and 5 figure questions is a small sample. Run-to-run noise is about 0.05, so treat differences below that as noise.
+- Contextual Relevancy scores every context sentence on its own; it stayed below 0.5 and no question passed 0.7. It is useful as a direction, not as a target.
+- Generator and judge are the same model family.
+- The Docling run was evaluated in a local environment, not inside the Docker image.
+- Figure 2's left diagram (MatMul, Scale, Mask, SoftMax) is still read wrongly by the vision models tried.
+
+### Running the evaluation
 
 ```bash
-# add PDFs to documents/, then:
+# add the two PDFs to documents/, then:
 uv run python evaluate.py
+
+# optional: table extraction with Docling
+uv run --extra docling python evaluate.py
+
+# optional: figure descriptions
+PAPEER_FIGURE_DESCRIPTIONS=1 PAPEER_VISION_MODEL=gpt-4o uv run python evaluate.py
 ```
 
-- Goldens are generated per document and cached in `goldens_v3.json`; the cache is keyed by file hash + filter settings
-- Results are written to `eval_results_v3.json` after each document, so partial runs survive interruption
-- Raw results, goldens, and diagnostics are gitignored; this table is the committed record
+Retrieval settings are in `.env.example` (`PAPEER_PRIMARY_K`, `PAPEER_REL_CUTOFF`, `PAPEER_DOCLING`).
 
 ---
 

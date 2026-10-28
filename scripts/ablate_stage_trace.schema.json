@@ -1,0 +1,314 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://papeer.local/schemas/ablate_stage_trace.schema.json",
+  "title": "Papeer stage-by-stage retrieval trace",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "generated_at",
+    "mode",
+    "scope",
+    "k",
+    "bm25_k",
+    "collection",
+    "neon_table",
+    "cache_backend",
+    "pace_seconds",
+    "setup_cooldown_seconds",
+    "user_id",
+    "session_id",
+    "documents",
+    "stages",
+    "questions",
+    "summary"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "generated_at": { "type": "string" },
+    "mode": { "const": "trace" },
+    "scope": { "enum": ["isolated", "pooled"] },
+    "k": { "const": 8 },
+    "bm25_k": { "const": 5 },
+    "collection": { "const": "papeer_docs" },
+    "neon_table": { "const": "embedding_cache" },
+    "cache_backend": { "enum": ["neon", "local"] },
+    "pace_seconds": { "type": "number", "minimum": 0 },
+    "setup_cooldown_seconds": { "type": "number", "minimum": 0 },
+    "user_id": { "type": "string", "pattern": "^lib-[0-9a-f]{32}$" },
+    "session_id": { "type": "string", "pattern": "^ablate_stage_[0-9]+$" },
+    "documents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["pdf", "title", "chunks"],
+        "properties": {
+          "pdf": { "type": "string" },
+          "title": { "type": "string" },
+          "chunks": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "stages": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "items": {
+        "enum": [
+          "dense_arm",
+          "query_variants",
+          "variant_search",
+          "variant_bm25",
+          "variant_pool",
+          "pre_parent_selection",
+          "final_parent_expanded"
+        ]
+      }
+    },
+    "questions": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/question" }
+    },
+    "summary": { "$ref": "#/$defs/summary" }
+  },
+  "$defs": {
+    "nullableString": { "type": ["string", "null"] },
+    "nullableNumber": { "type": ["number", "null"] },
+    "nullableInteger": { "type": ["integer", "null"] },
+    "docEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rank",
+        "source",
+        "variant",
+        "title",
+        "page",
+        "metadata_page",
+        "parent_id",
+        "rerank_score",
+        "bm25_only",
+        "label_hit",
+        "text_hit",
+        "probe_matches",
+        "text_fraction",
+        "probe_match",
+        "content_preview",
+        "parent_preview"
+      ],
+      "properties": {
+        "rank": { "type": "integer", "minimum": 1 },
+        "source": { "type": "string" },
+        "variant": { "$ref": "#/$defs/nullableString" },
+        "title": { "$ref": "#/$defs/nullableString" },
+        "page": { "$ref": "#/$defs/nullableInteger" },
+        "metadata_page": { "$ref": "#/$defs/nullableInteger" },
+        "parent_id": { "$ref": "#/$defs/nullableString" },
+        "rerank_score": { "$ref": "#/$defs/nullableNumber" },
+        "bm25_only": { "type": "boolean" },
+        "label_hit": { "type": "boolean" },
+        "text_hit": { "type": "boolean" },
+        "probe_matches": { "type": "integer", "minimum": 0 },
+        "text_fraction": { "type": "number", "minimum": 0, "maximum": 1 },
+        "probe_match": { "$ref": "#/$defs/nullableString" },
+        "content_preview": { "type": "string" },
+        "parent_preview": { "type": "string" }
+      }
+    },
+    "stageResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "variants",
+        "docs",
+        "n_docs",
+        "n_unique_docs",
+        "probes_total",
+        "probes_matched",
+        "text_fraction",
+        "label_present",
+        "text_present",
+        "either_present"
+      ],
+      "properties": {
+        "variants": {
+          "type": ["array", "null"],
+          "items": { "type": "string" }
+        },
+        "docs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/docEntry" }
+        },
+        "n_docs": { "type": "integer", "minimum": 0 },
+        "n_unique_docs": { "type": "integer", "minimum": 0 },
+        "probes_total": { "type": "integer", "minimum": 0 },
+        "probes_matched": { "type": "integer", "minimum": 0 },
+        "text_fraction": { "type": "number", "minimum": 0, "maximum": 1 },
+        "label_present": { "type": "boolean" },
+        "text_present": { "type": "boolean" },
+        "either_present": { "type": "boolean" }
+      }
+    },
+    "questionStages": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dense_arm",
+        "query_variants",
+        "variant_search",
+        "variant_bm25",
+        "variant_pool",
+        "pre_parent_selection",
+        "final_parent_expanded"
+      ],
+      "properties": {
+        "dense_arm": { "$ref": "#/$defs/stageResult" },
+        "query_variants": { "$ref": "#/$defs/stageResult" },
+        "variant_search": { "$ref": "#/$defs/stageResult" },
+        "variant_bm25": { "$ref": "#/$defs/stageResult" },
+        "variant_pool": { "$ref": "#/$defs/stageResult" },
+        "pre_parent_selection": { "$ref": "#/$defs/stageResult" },
+        "final_parent_expanded": { "$ref": "#/$defs/stageResult" }
+      }
+    },
+    "question": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "qid",
+        "local_id",
+        "doc",
+        "input",
+        "gold_page",
+        "expected_pages",
+        "gold_page_preview",
+        "gold_probe_count",
+        "flags",
+        "variants",
+        "stages"
+      ],
+      "properties": {
+        "qid": { "type": "string", "pattern": "^Q[0-9]{2}$" },
+        "local_id": { "type": "string" },
+        "doc": { "type": "string" },
+        "input": { "type": "string" },
+        "gold_page": { "$ref": "#/$defs/nullableInteger" },
+        "expected_pages": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1 }
+        },
+        "gold_page_preview": { "type": "string" },
+        "gold_probe_count": { "type": "integer", "minimum": 0, "maximum": 5 },
+        "flags": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "variants": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "stages": { "$ref": "#/$defs/questionStages" }
+      }
+    },
+    "stageSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "questions",
+        "label_present",
+        "text_present",
+        "either_present",
+        "rate_label",
+        "rate_text",
+        "rate_either",
+        "avg_text_fraction",
+        "avg_docs"
+      ],
+      "properties": {
+        "questions": { "type": "integer", "minimum": 1 },
+        "label_present": { "type": "integer", "minimum": 0 },
+        "text_present": { "type": "integer", "minimum": 0 },
+        "either_present": { "type": "integer", "minimum": 0 },
+        "rate_label": { "type": "number", "minimum": 0, "maximum": 1 },
+        "rate_text": { "type": "number", "minimum": 0, "maximum": 1 },
+        "rate_either": { "type": "number", "minimum": 0, "maximum": 1 },
+        "avg_text_fraction": { "type": "number", "minimum": 0, "maximum": 1 },
+        "avg_docs": { "type": "number", "minimum": 0 }
+      }
+    },
+    "docStageSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["questions", "label_present", "text_present", "either_present", "avg_text_fraction"],
+      "properties": {
+        "questions": { "type": "integer", "minimum": 1 },
+        "label_present": { "type": "integer", "minimum": 0 },
+        "text_present": { "type": "integer", "minimum": 0 },
+        "either_present": { "type": "integer", "minimum": 0 },
+        "avg_text_fraction": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "docSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dense_arm",
+        "query_variants",
+        "variant_search",
+        "variant_bm25",
+        "variant_pool",
+        "pre_parent_selection",
+        "final_parent_expanded"
+      ],
+      "properties": {
+        "dense_arm": { "$ref": "#/$defs/docStageSummary" },
+        "query_variants": { "$ref": "#/$defs/docStageSummary" },
+        "variant_search": { "$ref": "#/$defs/docStageSummary" },
+        "variant_bm25": { "$ref": "#/$defs/docStageSummary" },
+        "variant_pool": { "$ref": "#/$defs/docStageSummary" },
+        "pre_parent_selection": { "$ref": "#/$defs/docStageSummary" },
+        "final_parent_expanded": { "$ref": "#/$defs/docStageSummary" }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["n_questions", "flagged_qids", "by_stage", "by_doc"],
+      "properties": {
+        "n_questions": { "type": "integer", "minimum": 1 },
+        "flagged_qids": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^Q[0-9]{2}$" }
+        },
+        "by_stage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dense_arm",
+            "query_variants",
+            "variant_search",
+            "variant_bm25",
+            "variant_pool",
+            "pre_parent_selection",
+            "final_parent_expanded"
+          ],
+          "properties": {
+            "dense_arm": { "$ref": "#/$defs/stageSummary" },
+            "query_variants": { "$ref": "#/$defs/stageSummary" },
+            "variant_search": { "$ref": "#/$defs/stageSummary" },
+            "variant_bm25": { "$ref": "#/$defs/stageSummary" },
+            "variant_pool": { "$ref": "#/$defs/stageSummary" },
+            "pre_parent_selection": { "$ref": "#/$defs/stageSummary" },
+            "final_parent_expanded": { "$ref": "#/$defs/stageSummary" }
+          }
+        },
+        "by_doc": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/docSummary" }
+        }
+      }
+    }
+  }
+}
