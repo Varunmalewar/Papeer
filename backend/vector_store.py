@@ -27,6 +27,13 @@ load_dotenv(override=True)  # .env is source of truth — overrides any stray en
 
 COLLECTION_NAME = "papeer_docs"
 
+# Test/offline-only switch: skip Neon and Qdrant bootstrap entirely. Unset keeps
+# production behavior unchanged. _ensure_collection() raises if vector access is
+# attempted while the guard is on.
+_SKIP_VECTOR_BOOTSTRAP = (
+    os.environ.get("PAPEER_SKIP_VECTOR_BOOTSTRAP", "").strip() == "1"
+)
+
 base_embeddings = GoogleGenerativeAIEmbeddings(
     model="gemini-embedding-2",
     api_key=os.environ.get("GOOGLE_API_KEY"),
@@ -37,6 +44,9 @@ base_embeddings = GoogleGenerativeAIEmbeddings(
 
 def _build_embedding_store():
     """Neon Postgres ByteStore when DATABASE_URL is set, else local file store."""
+    if _SKIP_VECTOR_BOOTSTRAP:
+        print("[embeddings] Vector bootstrap disabled; using LocalFileStore.")
+        return LocalFileStore("./embedding_cache/")
     try:
         from backend.postgres_store import get_embedding_byte_store
 
@@ -72,11 +82,14 @@ def _timed_embed_query(text, *args, **kwargs):
 
 embeddings.embed_query = _timed_embed_query
 
-qdrant_client = QdrantClient(
-    url=os.environ["QDRANT_URL"],
-    api_key=os.environ["QDRANT_API_KEY"],
-    timeout=120,
-)
+if _SKIP_VECTOR_BOOTSTRAP:
+    qdrant_client = None
+else:
+    qdrant_client = QdrantClient(
+        url=os.environ["QDRANT_URL"],
+        api_key=os.environ["QDRANT_API_KEY"],
+        timeout=120,
+    )
 
 _collection_ready = False
 _collection_lock = threading.Lock()
@@ -91,6 +104,11 @@ def _ensure_collection() -> None:
     trip (~0.3-0.4 s each), and this used to run 4x per search variant.
     """
     global _collection_ready
+    if qdrant_client is None:
+        raise RuntimeError(
+            "Vector store unavailable: PAPEER_SKIP_VECTOR_BOOTSTRAP=1 disables "
+            "Neon and Qdrant bootstrap."
+        )
     if _collection_ready:
         return
     with _collection_lock:
@@ -434,9 +452,7 @@ def bm25_search(
         return []
     doc_tokens = [_tokenize(d.page_content) for d in session_docs]
     scores = _bm25_scores(q_tokens, doc_tokens)
-    # ONE parent per parent_id — two children of the same parents block must
-    # not burn slots that would push the genuinely-distinct parent out.
-    hits, seen_docs, seen_parents = [], set(), set()
+    hits, seen_docs = [], set()
     for i in sorted(range(len(session_docs)), key=lambda i: scores[i], reverse=True):
         d = session_docs[i]
         if scores[i] <= 0:
@@ -445,11 +461,6 @@ def bm25_search(
         if key in seen_docs:
             continue
         seen_docs.add(key)
-        meta = getattr(d, "metadata", None) or {}
-        parent_key = meta.get("parent_id") or d.page_content
-        if parent_key in seen_parents:
-            continue
-        seen_parents.add(parent_key)
         d.metadata["bm25_score"] = round(float(scores[i]), 4)
         d.metadata["bm25_only"] = True
         hits.append(d)
@@ -470,8 +481,6 @@ def add_paper(docs: list[Document], session_id: str, user_id: str | None = None)
             doc.metadata["user_id"] = user_id
         if isinstance(doc.page_content, str):
             doc.page_content = _nul_re.sub("", doc.page_content)
-        if isinstance(doc.metadata.get("parent_text"), str):
-            doc.metadata["parent_text"] = _nul_re.sub("", doc.metadata["parent_text"])
     _get_vectorstore().add_documents(docs)
     invalidate_corpus_cache()
 

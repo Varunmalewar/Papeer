@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from langchain_community.document_loaders import PyMuPDFLoader
 
-from backend.paper_loader import _small_to_big, load_pdf
+from backend.paper_loader import _chunk_docs, load_pdf
 from backend.text_clean import (
     _looks_like_table,
     boilerplate_lines,
@@ -284,7 +284,7 @@ def _indent(text: str) -> str:
 @pytest.mark.parametrize("pdf", sorted(DOCUMENTS.glob("*.pdf")), ids=lambda p: p.stem)
 def test_pdf_chunks_before_vs_after_cleaning(pdf: Path, caplog):
     raw_docs = PyMuPDFLoader(str(pdf)).load()
-    before = _small_to_big(raw_docs, pdf.stem)
+    before = _chunk_docs(raw_docs, pdf.stem)
     with caplog.at_level(logging.WARNING, logger="backend.text_clean"):
         after = load_pdf(str(pdf))
 

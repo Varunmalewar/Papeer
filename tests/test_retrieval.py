@@ -1,11 +1,20 @@
 """Hermetic unit tests for retrieval internals (no network, no LLM).
 
 Covers: RRF fusion, scope filter (per-user isolation), BM25 scoring,
-and the Groq-safe history trimmer.
+evidence selection, and the Groq-safe history trimmer.
 """
+import pytest
+from langchain_core.documents import Document
 from qdrant_client.models import FieldCondition, Filter, MatchAny
 
-from backend.rag_graph import _fit_history, _history_units
+import backend.rag_graph as rag_graph
+from backend.rag_graph import (
+    _fit_history,
+    _history_units,
+    _relative_cutoff,
+    _retrieval_is_weak,
+    _select_evidence,
+)
 from backend.vector_store import _bm25_scores, _rrf_fuse, _scope_filter, _tokenize
 
 
@@ -108,3 +117,73 @@ def test_fit_history_never_splits_tool_pair():
     roles = [m.get("role") for m in out]
     assert "tool_calls" in out[-2] or out[-2].get("tool_calls")
     assert roles[-1] == "tool"
+
+
+# ── Evidence selection ───────────────────────────────────────────────────────
+
+def test_select_evidence_orders_best_reranked_first():
+    docs = [
+        Document(page_content="low", metadata={"rerank_score": 0.1}),
+        Document(page_content="high", metadata={"rerank_score": 0.9}),
+    ]
+    assert [d.page_content for d in _select_evidence(docs)] == ["high", "low"]
+
+
+def test_select_evidence_unscored_docs_go_last():
+    docs = [
+        Document(page_content="bm25", metadata={}),
+        Document(page_content="scored", metadata={"rerank_score": 0.2}),
+    ]
+    assert [d.page_content for d in _select_evidence(docs)] == ["scored", "bm25"]
+
+
+def test_select_evidence_skips_oversized_chunk_but_keeps_later_ones(monkeypatch):
+    monkeypatch.setattr(rag_graph, "_CONTEXT_CHARS", 100)
+    docs = [
+        Document(page_content="a" * 60, metadata={"rerank_score": 0.9}),
+        Document(page_content="b" * 60, metadata={"rerank_score": 0.8}),
+        Document(page_content="c" * 30, metadata={"rerank_score": 0.7}),
+    ]
+    assert [d.page_content[0] for d in _select_evidence(docs)] == ["a", "c"]
+
+
+# ── Relative rerank cutoff + primary/fallback retrieval ──────────────────────
+
+def _scored(text, score, **extra):
+    return Document(page_content=text, metadata={"rerank_score": score, **extra})
+
+
+def test_relative_cutoff_drops_chunks_far_below_the_best():
+    docs = [_scored("best", 0.9), _scored("close", 0.7), _scored("far", 0.2)]
+    assert [d.page_content for d in _relative_cutoff(docs, 0.7)] == ["best", "close"]
+
+
+def test_relative_cutoff_zero_keeps_everything_sorted():
+    docs = [_scored("low", 0.1), _scored("high", 0.9)]
+    assert [d.page_content for d in _relative_cutoff(docs, 0.0)] == ["high", "low"]
+
+
+def test_relative_cutoff_always_keeps_the_best_chunk():
+    assert [d.page_content for d in _relative_cutoff([_scored("only", 0.05)], 0.99)] == ["only"]
+
+
+def test_retrieval_is_weak_when_empty_or_below_floor():
+    assert _retrieval_is_weak([])
+    assert _retrieval_is_weak([_scored("x", 0.01, below_floor=True)])
+    assert not _retrieval_is_weak([_scored("x", 0.6)])
+
+
+def test_primary_path_used_when_strong(monkeypatch):
+    monkeypatch.setattr(rag_graph, "vs_search", lambda **kw: [_scored("a", 0.9), _scored("b", 0.3)])
+    monkeypatch.setattr(
+        rag_graph, "_retrieve_variants_impl",
+        lambda *a, **k: pytest.fail("fallback must not run when primary retrieval is strong"),
+    )
+    out = rag_graph.retrieve_merged("q", 8, ["s"], [], "u")
+    assert [d.page_content for d in out] == ["a"]  # 0.3 < 0.7 x 0.9
+
+
+def test_fallback_to_variants_when_primary_is_below_floor(monkeypatch):
+    monkeypatch.setattr(rag_graph, "vs_search", lambda **kw: [_scored("junk", 0.01, below_floor=True)])
+    monkeypatch.setattr(rag_graph, "_retrieve_variants_impl", lambda *a, **k: ["rescued"])
+    assert rag_graph.retrieve_merged("q", 8, ["s"], [], "u") == ["rescued"]

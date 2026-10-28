@@ -7,7 +7,7 @@ The module is deliberately dependency-free (stdlib only) so both
 Cleaning is expressed over a list of ``(page_number, page_text)`` tuples.  A
 document-level line stream is used for layout decisions (references,
 acknowledgements, headings), but deletions are always applied back to the page
-that owns each line.  Pages are never concatenated, so ``_small_to_big()`` keeps
+that owns each line.  Pages are never concatenated, so ``_chunk_docs()`` keeps
 the original page metadata.
 """
 from __future__ import annotations

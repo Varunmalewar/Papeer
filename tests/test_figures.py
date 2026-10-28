@@ -79,7 +79,6 @@ def test_ingest_figure_docs_persists_image_and_metadata(tmp_path):
     assert store.exists(md["image_path"])
     assert store.get(md["image_path"]).startswith(b"\x89PNG")
     assert "Figure 1:" in docs[0].page_content
-    assert md["parent_id"] == md["figure_id"]
 
 
 def test_figure_context_header_and_strip(tmp_path):

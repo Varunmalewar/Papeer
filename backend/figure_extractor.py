@@ -236,11 +236,17 @@ def figure_chunk_text(record: FigureRecord, description: str = "") -> str:
 # ── stage 2: vision descriptions (cached by image hash) ─────────────────────
 
 _DESCRIBE_PROMPT = (
-    "Describe this figure from a research paper so that a text-only retrieval "
-    "system can match questions to it. State the plot/diagram type, axes or "
-    "labels, and the key trend or comparison shown. Use 2-3 sentences. Only "
-    "describe what is visible; do not speculate about the paper's claims."
+    "Describe this figure from a research paper so that a text-only retrieval system can "
+    "answer questions about it. First give the figure type. For a diagram (architecture, "
+    "pipeline, process): list EVERY labelled block exactly as written, in order along the "
+    "arrows and say which part of the figure each belongs to; note repeated groups (such as "
+    "'Nx' or 'h'), how many parallel branches there are, and what connects to what, "
+    "including arrows that cross from one part to another. For a plot: the axes, the series "
+    "and the key comparison. Copy label text exactly and never guess a label you cannot "
+    "read. At most 130 words."
 )
+# Part of the cache key, so editing the prompt never serves descriptions made by the old one.
+_PROMPT_ID = hashlib.sha256(_DESCRIBE_PROMPT.encode("utf-8")).hexdigest()[:8]
 
 
 class DescriptionCache:
@@ -285,7 +291,7 @@ def describe_image(image_bytes: bytes, ext: str, caption: str, model: str) -> st
         model=model,
         api_key=os.environ.get("OPENAI_API_KEY"),
         temperature=0,
-        max_tokens=220,
+        max_tokens=400,
     )
     message = {
         "role": "user",
@@ -317,12 +323,13 @@ def ingest_figure_docs(
         if ctx.describe:
             model = ctx.vision_model or vision_model_name()
             cache = ctx.cache
-            description = (cache.get(record.sha256, model) if cache else None) or ""
+            cache_model = f"{model}:{_PROMPT_ID}"
+            description = (cache.get(record.sha256, cache_model) if cache else None) or ""
             if not description:
                 try:
                     description = describe_image(record.image_bytes, record.ext, record.caption, model)
                     if cache and description:
-                        cache.put(record.sha256, model, description)
+                        cache.put(record.sha256, cache_model, description)
                 except Exception as e:
                     print(f"[figures] vision description failed for {figure_id}: {e}")
         text = figure_chunk_text(record, description)
@@ -340,8 +347,6 @@ def ingest_figure_docs(
                 "image_path": key,
                 "image_ext": record.ext,
                 "image_sha256": record.sha256,
-                "parent_id": figure_id,
-                "parent_text": text,
             },
         ))
     return docs

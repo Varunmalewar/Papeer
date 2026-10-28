@@ -282,7 +282,7 @@ def _strip_stray_refusal(answer: str) -> str:
 
 def _best_matching_doc(text: str, docs: list) -> tuple:
     """Return (doc, overlap_score) — fraction of the text's 8-grams that appear
-    in the doc's parent/page text. Score 0 means nothing matched."""
+    in the doc's text. Score 0 means nothing matched."""
     body = _PAPER_CITATION_RE.sub(" ", text)
     body = re.sub(r"\s+", " ", body).strip().lower()
     if not body or not docs:
@@ -293,8 +293,7 @@ def _best_matching_doc(text: str, docs: list) -> tuple:
         return None, 0.0
     best_doc, best_score = None, 0.0
     for d in docs:
-        md = getattr(d, "metadata", None) or {}
-        text_doc = ((md.get("parent_text") or "") + " " + (getattr(d, "page_content", None) or "")).lower()
+        text_doc = (getattr(d, "page_content", None) or "").lower()
         norm = re.sub(r"\s+", " ", text_doc)
         hit = sum(1 for g in grams if g in norm)
         score = hit / len(grams)
@@ -305,7 +304,7 @@ def _best_matching_doc(text: str, docs: list) -> tuple:
 
 def _hydrate_correction_citation(fixed_text: str, docs: list) -> str:
     """Premise-correction citations come from the LLM and often name the wrong
-    title, so citation validation deletes them. Locate the retrieved parent the
+    title, so citation validation deletes them. Locate the retrieved chunk the
     correction text actually came from and re-stamp a valid [Title, Page N]."""
     if not isinstance(fixed_text, str) or not docs:
         return fixed_text
@@ -356,14 +355,31 @@ def router_node(state: RAGState) -> dict:
     # direct_answer is only reachable when the library is empty.
     if titles and decision.route == "direct_answer":
         decision = decision.model_copy(update={"route": "paper_qa"})
-    return {"route": decision.route}
+    # The checkpointer keeps these across turns of one chat thread; a stale
+    # original_query makes the generator answer the PREVIOUS question.
+    return {
+        "route": decision.route,
+        "original_query": None,
+        "premise_refuted": None,
+        "premise_correction": None,
+    }
 
 
 # â”€â”€ Tool schemas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class RetrieverInput(BaseModel):
     query: str = Field(description="Semantic query to search research paper chunks")
-    k: int = Field(default=8, ge=1, le=10, description="Number of chunks to retrieve (1-10)")
+    k: int = Field(
+        default=8,
+        ge=1,
+        le=20,
+        description=(
+            "Number of candidate chunks to retrieve (1-20). Use 6-8 for a "
+            "single fact and 12-20 only when the question requires multiple "
+            "independent pieces of evidence. The pipeline compacts candidates "
+            "before answer generation."
+        ),
+    )
 
 
 class WebSearchInput(BaseModel):
@@ -382,33 +398,43 @@ class WebSearchInput(BaseModel):
 
 # â”€â”€ Tools â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-# â”€â”€ Parent-document expansion (small-to-big) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-# Retrieved child chunks are swapped for their stored parent blocks; children
-# that share a parent collapse into one so the same section is never sent to
-# the LLM twice. Chunks without parent metadata (legacy docs) pass through.
+# Evidence packaging: retrieved chunks go to the generator as-is. Only the
+# number of final chunks is tuned here (multi-hop questions get more).
+
+_FINAL_EVIDENCE_K = int(os.environ.get("PAPEER_FINAL_EVIDENCE_K", "3"))
+# Primary retrieval: plain hybrid search + rerank, top PRIMARY_K, then drop every
+# chunk whose rerank score is below REL_CUTOFF x the best score (dynamic k).
+_PRIMARY_K = int(os.environ.get("PAPEER_PRIMARY_K", "5"))
+_REL_CUTOFF = float(os.environ.get("PAPEER_REL_CUTOFF", "0.7"))
+_MULTIHOP_CANDIDATE_K = int(os.environ.get("PAPEER_MULTIHOP_CANDIDATE_K", "12"))
+_MULTIHOP_FINAL_EVIDENCE_K = int(
+    os.environ.get("PAPEER_MULTIHOP_FINAL_EVIDENCE_K", "6")
+)
 
 
-def _expand_parents(docs: list) -> list:
-    seen: set[str] = set()
+def _rerank_sort_key(doc):
+    score = (getattr(doc, "metadata", None) or {}).get("rerank_score")
+    if score is None:
+        return (1, 0.0)
+    try:
+        return (0, -float(score))
+    except (TypeError, ValueError):
+        return (1, 0.0)
+
+
+def _select_evidence(docs: list) -> list:
+    """Order reranked chunks best-first and keep them inside the context budget.
+
+    An oversized chunk is skipped rather than ending the loop, so later relevant
+    evidence can still use the remaining budget."""
     out: list = []
     total = 0
-    for d in docs:
-        meta = getattr(d, "metadata", None) or {}
-        pid, ptext = meta.get("parent_id"), meta.get("parent_text")
-        has_parent = isinstance(ptext, str) and ptext.strip() and bool(pid)
-        if has_parent and pid in seen:
-            continue  # same parent already expanded
-        text = ptext if has_parent else d.page_content
-        # parent blocks are bigger than children â€” keep the answer context
-        # within the same character budget as before expansion
-        if total + len(text) > _CONTEXT_CHARS:
-            break
-        if has_parent:
-            seen.add(pid)
-            clean = _clean_text(ptext)
-            d = d.model_copy(update={"page_content": clean}) if hasattr(d, "model_copy") else d
+    for d in sorted(docs, key=_rerank_sort_key):
+        size = len(d.page_content or "")
+        if total + size > _CONTEXT_CHARS:
+            continue
         out.append(d)
-        total += len(text)
+        total += size
     return out
 
 
@@ -479,18 +505,67 @@ def retrieve_from_vectorstore(
 
 
 def retrieve_merged(query: str, k: int, scope: list[str], titles: list[str], user_id: str | None) -> list:
-    """Variant-merge + BM25-rescue + parent expansion shared by the retrieval
-    tool and the deterministic direct_retrieval node (query-rewrite retries).
+    """Evidence retrieval shared by the retrieval tool and the deterministic
+    direct_retrieval node (query-rewrite retries).
+
+    Primary path is hybrid search + rerank with a relative score cutoff. Only when
+    that finds nothing usable (empty, or every candidate under the rerank floor —
+    the false-premise / vocabulary-gap case) does it fall back to the query-variant
+    + BM25-rescue pool.
     """
     with timed('retrieve_merged'):
         return _retrieve_merged_impl(query, k, scope, titles, user_id)
 
 
+def _relative_cutoff(docs: list, rel: float) -> list:
+    """Best-first docs, keeping only those scoring >= rel x the best rerank score."""
+    docs = sorted(docs, key=_rerank_sort_key)
+    if rel <= 0 or not docs:
+        return docs
+    best = (getattr(docs[0], "metadata", None) or {}).get("rerank_score")
+    if not best:
+        return docs
+    return [
+        d for d in docs
+        if float((getattr(d, "metadata", None) or {}).get("rerank_score") or 0.0) >= rel * float(best)
+    ]
+
+
+def _retrieval_is_weak(docs: list) -> bool:
+    return not docs or any((getattr(d, "metadata", None) or {}).get("below_floor") for d in docs)
+
+
 def _retrieve_merged_impl(query: str, k: int, scope: list[str], titles: list[str], user_id: str | None) -> list:
+    candidate_k = max(1, min(k, 20))
+    primary_k = _MULTIHOP_FINAL_EVIDENCE_K if candidate_k >= _MULTIHOP_CANDIDATE_K else _PRIMARY_K
+    with timed('search'):
+        primary = _clean_docs(
+            vs_search(query=query, scope=scope, k=primary_k, titles=titles, user_id=user_id or None)
+        )
+    if not _retrieval_is_weak(primary):
+        return _select_evidence(_relative_cutoff(primary, _REL_CUTOFF))
+    return _retrieve_variants_impl(query, k, scope, titles, user_id)
+
+
+def _retrieve_variants_impl(query: str, k: int, scope: list[str], titles: list[str], user_id: str | None) -> list:
+    candidate_k = max(1, min(k, 20))
+    final_k = (
+        _MULTIHOP_FINAL_EVIDENCE_K
+        if candidate_k >= _MULTIHOP_CANDIDATE_K
+        else _FINAL_EVIDENCE_K
+    )
     merged: dict = {}
     for vq in _query_variants(query):
         with timed('search'):
-            docs_v = _clean_docs(vs_search(query=vq, scope=scope, k=k, titles=titles, user_id=user_id or None))
+            docs_v = _clean_docs(
+                vs_search(
+                    query=vq,
+                    scope=scope,
+                    k=candidate_k,
+                    titles=titles,
+                    user_id=user_id or None,
+                )
+            )
         # BM25-only side channel: premise questions poison dense+rerank scores
         # ("GELU" appears nowhere in the paper) while the real counterpart
         # chunk shares keywords ('activation', 'feed-forward'). Small, capped
@@ -499,7 +574,7 @@ def _retrieve_merged_impl(query: str, k: int, scope: list[str], titles: list[str
             docs_v += _clean_docs(bm25_search(query=vq, scope=scope, k=5, titles=titles, user_id=user_id or None))
         for d in docs_v:
             meta = getattr(d, "metadata", None) or {}
-            key = meta.get("parent_id") or meta.get("parent_text") or d.page_content
+            key = d.page_content
             score = float(meta.get("rerank_score", 0.0) or 0.0)
             cur = merged.get(key)
             cur_score = float((getattr(cur, "metadata", None) or {}).get("rerank_score", 0.0) or 0.0) if cur else -1.0
@@ -513,21 +588,22 @@ def _retrieve_merged_impl(query: str, k: int, scope: list[str], titles: list[str
         key=lambda d: float((getattr(d, "metadata", None) or {}).get("rerank_score", 0.0) or 0.0),
         reverse=True,
     ):
-        key = (getattr(d, "metadata", None) or {}).get("parent_id") or d.page_content
+        key = d.page_content
         if key in seen_keys:
             continue
         seen_keys.add(key)
         if (getattr(d, "metadata", None) or {}).get("bm25_only") and len(bm25_extras) < 4:
             bm25_extras.append(d)
         else:
-            if len(semantic) < k:
+            if len(semantic) < candidate_k:
                 semantic.append(d)
-    # keyword-rescued parents LEAD the list: the context char-cap truncates
-    # the tail, and these exclusives are the only chunks that can ground
-    # premise corrections (semantic top-k already filled the earlier slots in
-    # normal, non-premise queries where extras == semantic and dedupe wins).
-    docs = bm25_extras + semantic[: max(0, k - len(bm25_extras))]
-    return _expand_parents(docs)
+    # Semantic/reranked hits remain the default evidence. BM25-only rescue
+    # chunks fill genuine gaps but never displace stronger semantic evidence
+    # at the start of the answer context.
+    docs = semantic[:final_k]
+    if len(docs) < final_k:
+        docs.extend(bm25_extras[: final_k - len(docs)])
+    return _select_evidence(docs)
 
 
 @tool(args_schema=WebSearchInput)
