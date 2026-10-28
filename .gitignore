@@ -280,3 +280,15 @@ test_payload.json
 
 # source PDFs (copyrighted, add locally to run evaluate.py)
 documents/
+
+# the hand-labelled eval set is the one goldens file that stays tracked
+!goldens_manual_pairs.json
+
+# experiment outputs and scratch (the scripts that produce them stay tracked)
+ablation_*.json
+e1_generation_ab/
+e2_parent_child_ab/
+graphify-out/
+*.bak*
+*.before_*
+.github/copilot-instructions.md

@@ -35,6 +35,20 @@ dependencies = [
     "uvicorn>=0.46.0",
 ]
 
+[project.optional-dependencies]
+# Rebuilds PDF tables as markdown on table pages (heavy: torch, ~1.5 GB RAM). Optional.
+docling = ["docling>=2", "torch", "torchvision"]
+
+# CPU-only torch: the default Linux wheel pulls ~3 GB of CUDA libraries the API never uses.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", extra = "docling" }]
+torchvision = [{ index = "pytorch-cpu", extra = "docling" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
 [dependency-groups]
 dev = [
     "pillow>=12.2.0",

@@ -7,8 +7,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # ── Layer 1: install deps via uv (pyproject + lock first for cache efficiency) ──
+# --extra docling adds Docling (CPU-only torch). --no-cache keeps uv's download cache
+# out of the image, so the wheels are not stored twice.
 COPY pyproject.toml uv.lock ./
-RUN pip install --no-cache-dir uv && uv sync --no-dev --frozen --no-install-project
+RUN pip install --no-cache-dir uv \
+    && uv sync --no-dev --frozen --no-install-project --extra docling --no-cache
+
+# Bake the layout + table models into the image so the first upload never downloads them
+ENV DOCLING_ARTIFACTS_PATH=/opt/docling-models
+RUN uv run --no-sync docling-tools models download layout tableformer -o /opt/docling-models
 
 # ── Layer 2: backend package ───────────────────────────────────────────────────
 COPY backend/ backend/
@@ -18,7 +25,8 @@ COPY api/ api/
 COPY .env.example .
 
 # Non-root user for security (production best practice)
-RUN useradd -m -u 10001 papeer && chown -R papeer:papeer /app
+# Not chown -R: recursive chown copies the whole .venv into a new layer (~2 GB with Docling)
+RUN useradd -m -u 10001 papeer && chown papeer:papeer /app
 USER papeer
 
 EXPOSE 8000

@@ -119,9 +119,9 @@ docker run -d \
   --name papeer-web \
   --restart unless-stopped \
   --network host \
-  -e NEON_AUTH_BASE_URL="https://ep-sparkling-lab-b3l79fq0.neonauth.c-4.ap-southeast-1.aws.neon.tech/neondb/auth" \
+  -e NEON_AUTH_BASE_URL="https://<your-endpoint>.neonauth.<region>.aws.neon.tech/neondb/auth" \
   -e NEON_AUTH_COOKIE_SECRET="<32+ char secret>" \
-  -e PAPEER_API_KEY="vdasbfjwknffkbknasnuianewijfillnaknndilaicalia" \
+  -e PAPEER_API_KEY="<a-long-random-secret>" \
   varunmalewar/papeer_project:latest
 ```
 
