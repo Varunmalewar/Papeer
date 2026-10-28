@@ -221,6 +221,58 @@ Retrieval settings are in `.env.example` (`PAPEER_PRIMARY_K`, `PAPEER_REL_CUTOFF
 
 ---
 
+## Earlier evaluation (v3)
+
+Papeer includes an automated multi-document RAG evaluation harness (`evaluate.py`) built on [DeepEval](https://github.com/confident-ai/deepeval).
+
+### Setup
+
+- **Corpus:** 4 research papers (68 pages) placed in `documents/` (PDFs are gitignored)
+- **Goldens:** 35 LLM-synthesized Q/A pairs, filtered for grounding, entities, numbers, duplicates, and bibliography noise (not human-labeled)
+- **Judge:** `gpt-4o-mini` at temperature 0; OpenAI `text-embedding-3-small` for grounding checks only (retrieval keeps Gemini embeddings)
+
+### Metrics (threshold: 0.7)
+
+| Metric | What It Measures |
+|---|---|
+| **Contextual Precision** | Are the retrieved chunks relevant to the query? |
+| **Contextual Recall** | Does the retrieved context cover all expected information? |
+| **Contextual Relevancy** | Is the context relevant to both the input and the expected output? |
+| **Answer Relevancy** | Does the generated answer actually address the question? |
+| **Faithfulness** | Is the answer grounded in the retrieved context (no hallucination)? |
+
+### Results (v3, 4 documents / 35 goldens)
+
+| Document | Ctx Precision | Ctx Recall | Ctx Relevancy | Ans Relevancy | Faithfulness |
+|---|---|---|---|---|---|
+| 2212.10496v1 (8) | 0.90 (7/8) | 0.94 (8/8) | 0.47 (2/8) | 0.89 (6/8) | 0.81 (5/8) |
+| NIPS Attention (10) | 0.98 (10/10) | 0.93 (9/10) | 0.34 (0/10) | 0.93 (9/10) | 0.93 (9/10) |
+| Openclaw Report (9) | 0.91 (8/9) | 0.87 (7/9) | 0.46 (1/9) | 0.97 (9/9) | 0.94 (8/9) |
+| Springer MOCAA* (8) | 0.95 (8/8) | 0.69 (5/8) | 0.53 (2/8) | 0.80 (6/8) | 0.94 (8/8) |
+| **Overall (35)** | **0.94 (33/35)** | **0.86 (29/35)** | **0.45 (5/35)** | **0.90 (30/35)** | **0.91 (30/35)** |
+
+Change from the v2 baseline (40 goldens, different document set): Contextual Precision **0.87 → 0.94**, Contextual Recall **0.75 → 0.86**, Answer Relevancy **0.78 → 0.90**, Faithfulness **0.89 → 0.91**, Contextual Relevancy **0.44 → 0.45**.
+
+### Reading the numbers
+
+- **Generation is solid:** 0.94 precision and 0.90 answer relevancy; the NIPS paper reaches 0.98 precision and Openclaw 0.97 answer relevancy.
+- **Contextual Relevancy (0.45) is the retrieval bottleneck**, not the answer path. NIPS scores 0.34 because retrieved child chunks often contain surrounding sections; this is the next optimization target.
+- **Springer's 0.69 recall is mostly a measurement artifact:** DeepEval scores child chunks while the generator answers from expanded parent chunks, so facts present in the parent but absent from the child count as misses. Three of the six low-recall cases are this pattern; one was a bad golden synthesized from a reference list (fixed by bibliography-tail stripping).
+- Goldens for 2212/Openclaw/Springer had 1–2 shortfalls (8–9 of 10); NIPS reached 10/10.
+
+### Running evaluation
+
+```bash
+# add PDFs to documents/, then:
+uv run python evaluate.py
+```
+
+- Goldens are generated per document and cached in `goldens_v3.json`; the cache is keyed by file hash + filter settings
+- Results are written to `eval_results_v3.json` after each document, so partial runs survive interruption
+- Raw results, goldens, and diagnostics are gitignored; this table is the committed record
+
+---
+
 ## Tests
 
 ```bash
