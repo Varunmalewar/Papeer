@@ -141,7 +141,7 @@ Open http://localhost:3000.
 
 | Optimization | Details |
 |---|---|
-| **SSE streaming** | `/chat/stream` streams tokens with `X-Accel-Buffering: no`; aborted streams save no turn |
+| **SSE streaming** | `/chat/stream` streams tokens with `X-Accel-Buffering: no`; a closed stream stops sending tokens (the turn may still be saved) |
 | **Critic gate** | A lexical-grounding heuristic decides when to buffer and re-check an answer before it reaches the user |
 | **Refusal handling** | Stray "the paper does not state this" sentences are stripped; pure refusals are preserved |
 | **Premise guard** | Deterministic check corrects false-premise questions using retrieved text, not hardcoded answers |

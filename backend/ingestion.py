@@ -104,7 +104,8 @@ def ingest_webpage(url: str, session_id: str, user_id: str) -> list[Document]:
     from backend.vector_store import add_paper
 
     docs = load_document(url)
-    add_paper(docs, session_id, user_id=user_id)
+    if docs:
+        add_paper(docs, session_id, user_id=user_id)
     return docs
 
 

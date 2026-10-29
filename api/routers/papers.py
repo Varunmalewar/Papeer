@@ -137,7 +137,12 @@ def upload_webpage(session_id: str, url: str,
                    user_id: str = Depends(require_user)) -> StatusResponse:
     from backend.vector_store import count_chunks
 
-    ingest_webpage(url, session_id, user_id)
+    try:
+        docs = ingest_webpage(url, session_id, user_id)
+    except ValueError as e:  # blocked or unresolvable address
+        raise HTTPException(status_code=400, detail=str(e))
+    if not docs:
+        raise HTTPException(status_code=400, detail="No readable text found (redirects are not followed; use the final URL).")
     return StatusResponse(chunks=count_chunks(session_id, user_id=user_id))
 
 

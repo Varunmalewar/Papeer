@@ -25,7 +25,8 @@ def rate_limit(request: Request) -> None:
     if auth and auth.lower().startswith("bearer "):
         key = "jwt:" + auth.split(None, 1)[1][-12:]  # per-token bucket, no token stored
     else:
-        key = request.headers.get("X-API-Key") or (request.client.host if request.client else "?")
+        # X-Papeer-User is only honoured after auth passed (require_api_key runs first)
+        key = request.headers.get("X-Papeer-User") or request.headers.get("X-API-Key") or (request.client.host if request.client else "?")
     now = time.monotonic()
     window = _hits.setdefault(key, deque())
     while window and now - window[0] > WINDOW_S:

@@ -3,6 +3,8 @@ services:
     build:
       context: ./web
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://api:8000  # inside this network localhost is the web container
     image: papeer-web:latest
     container_name: papeer-web
     ports:
@@ -21,7 +23,7 @@ services:
     command: ["uv", "run", "--no-sync", "uvicorn", "api.main:app",
               "--host", "0.0.0.0", "--port", "8000"]
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"  # only the web app should reach the api
     env_file:
       - .env
     restart: unless-stopped

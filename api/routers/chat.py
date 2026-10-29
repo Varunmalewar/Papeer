@@ -111,8 +111,8 @@ async def chat_stream(body: ChatRequest, user_id: str = Depends(require_user)):
 
     Answers that may need the critic are buffered by the generate node and
     arrive only in `done`; safe answers stream. If the client disconnects
-    mid-stream the turn is not saved to the checkpointer (the graph run is
-    cancelled), so history stays consistent with what the user saw.
+    mid-stream we stop sending tokens, but the graph runs in a worker thread that
+    cannot be cancelled, so the finished turn can still be saved to history.
     """
     from backend.rag_graph import _INJECTION_REPLY, query_looks_injected
     from backend.streaming import reset_emitter, set_emitter
@@ -163,8 +163,8 @@ async def chat_stream(body: ChatRequest, user_id: str = Depends(require_user)):
                     break
                 yield _sse(event)
         finally:
-            # client disconnected (or stream finished): stop the graph run so an
-            # aborted turn is not saved to the checkpointer
+            # client disconnected (or stream finished): stop waiting for the graph run
+            # (its worker thread still finishes)
             if not task.done():
                 task.cancel()
 

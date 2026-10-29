@@ -4,7 +4,8 @@ Deployment target: **Next.js web (port 3000) + FastAPI backend (port 8000)**.
 
 The web image is frontend-only. It calls the backend at the URL compiled into
 `NEXT_PUBLIC_API_URL` at build time (currently `http://localhost:8000`), so on a
-single EC2 instance run the container with `--network host`.
+single EC2 instance run the container with `--network host`. Keep port 8000 closed in the
+security group: only the web port needs to be public; the backend trusts the web proxy.
 
 Replace every `<placeholder>` before running.
 

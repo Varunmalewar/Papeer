@@ -1,9 +1,12 @@
 import importlib.util
+import ipaddress
 import os
 import re
+import socket
 import tempfile
 import threading
 import urllib.request
+from urllib.parse import urlsplit
 from functools import lru_cache
 from pathlib import Path
 
@@ -156,8 +159,28 @@ def load_markdown(file_path: str) -> list[Document]:
     return _chunk_docs(docs, Path(file_path).stem, md=True)
 
 
+def _assert_public_url(url: str) -> None:
+    """Refuse non-http(s) URLs and hosts that resolve to private, loopback or link-local
+    addresses, so 'load a web page' cannot reach internal services or cloud metadata.
+
+    shortcut: the name is resolved once here, so DNS rebinding can still change the target;
+    upgrade: pin the resolved address for the download."""
+    parts = urlsplit(url)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        raise ValueError("Only http(s) URLs can be loaded.")
+    try:
+        infos = socket.getaddrinfo(parts.hostname, parts.port or 443)
+    except socket.gaierror as e:
+        raise ValueError(f"Could not resolve host '{parts.hostname}'.") from e
+    for info in infos:
+        if not ipaddress.ip_address(str(info[4][0]).split("%")[0]).is_global:
+            raise ValueError("That address is not a public web server.")
+
+
 def load_webpage(url: str) -> list[Document]:
-    docs = WebBaseLoader(url, requests_kwargs={"timeout": 30}).load()
+    _assert_public_url(url)
+    # shortcut: redirects are not followed (a redirect could point inside); upgrade: check each hop
+    docs = WebBaseLoader(url, requests_kwargs={"timeout": 30, "allow_redirects": False}).load()
     title = (docs[0].metadata.get("title") or url) if docs else url
     return _chunk_docs(docs, title)
 
