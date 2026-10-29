@@ -284,6 +284,10 @@ documents/
 # the hand-labelled eval set is the one goldens file that stays tracked
 !goldens_manual_pairs.json
 
+# web/lib/ contains frontend server code and must be tracked
+!web/lib/
+!web/lib/**
+
 # experiment outputs and scratch (the scripts that produce them stay tracked)
 ablation_*.json
 e1_generation_ab/
