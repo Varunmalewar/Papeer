@@ -184,7 +184,7 @@ Same 20 text questions after each change (single run each):
 |---|---|---|---|---|---|---|
 | Parent-child chunks, query variants + BM25 rescue | 0.68 | 0.58 | 0.29 | 0.86 | 0.89 * | 9/20 |
 | Plain 1000-character chunks | 0.67 | 0.71 | 0.25 | 0.86 | 0.90 * | 10/20 |
-| Hybrid search + rerank, top 5, relative score cutoff | 0.88 | 0.95 | 0.39 | 0.94 | 0.89 | 19/20 |
+| Hybrid search + rerank, top 5, relative score cutoff | 0.88 | 0.95 | 0.39 | 0.94 | 0.77 | 19/20 |
 | + Docling for table pages | 0.89 | 0.98 | 0.44 | 0.92 | 0.86 | not measured |
 
 \* The first two rows include 4 refusals ("the paper does not state this"), which always count as faithful. The new retrieval answers all 20, so its Faithfulness is the honest figure.
