@@ -158,7 +158,7 @@ Open http://localhost:3000.
 |---|---|
 | **Max 3 query rewrites** | Prevents unanswerable questions from looping and burning tokens |
 | **Chunk size 1000 / overlap 200** | Balances precision against context preserved across boundaries |
-| **`k=4` retrieved chunks** | Enough context without diluting the prompt or increasing cost |
+| **`k=5` retrieved chunks** | Enough context without diluting the prompt or increasing cost. `k=10` was tested and scored lower on recall and relevancy |
 | **Session-scoped collections** | Prevents papers from one session leaking into another |
 | **Temperature 0** | Deterministic answers and a stable evaluation baseline |
 | **Critic only when risky** | Running the critic on every answer doubles latency for no gain on well-grounded text |
