@@ -2,6 +2,8 @@
 
 Upload research papers and get grounded, cited answers. Papeer is a full-stack RAG application: a Next.js web app with Neon Auth, a FastAPI backend, and a LangGraph retrieval pipeline over Qdrant Cloud.
 
+**Live demo:** https://papeer-varun.duckdns.org
+
 ---
 
 ## What it does
@@ -284,5 +286,7 @@ Covers the critic gate, refusal stripping, SSE streaming, and figure extraction.
 ---
 
 ## Deployment
+
+The live demo runs on a single AWS EC2 instance with Docker Compose (`api` + `web`), behind Caddy for automatic HTTPS on a DuckDNS domain. It may be offline when the instance is stopped.
 
 See [DOCKER_GUIDE.md](DOCKER_GUIDE.md) for building the images, pushing to Docker Hub, and running the web container plus backend on EC2.

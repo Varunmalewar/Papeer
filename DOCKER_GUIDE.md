@@ -179,3 +179,71 @@ docker stop papeer-web
 docker rm papeer-web
 docker system prune -af
 ```
+
+---
+
+## Alternative: Docker Compose + Caddy (HTTPS)
+
+This is how the live demo runs. It replaces Steps 2–6: both containers are built on
+the instance and Caddy provides automatic HTTPS. Use ~30 GB of disk.
+
+**1. Domain and firewall**
+
+- Point a domain (e.g. a free [DuckDNS](https://www.duckdns.org) subdomain) at the
+  instance's Elastic IP.
+- Security group: open **80** and **443** to everyone, **22** to your IP only. Keep
+  3000 and 8000 closed.
+
+**2. Env files** (never commit them)
+
+- `.env` in the project root: the backend keys from Step 4, plus
+  `NEXT_PUBLIC_NEON_AUTH_URL`, `NEON_AUTH_BASE_URL`, `NEON_AUTH_COOKIE_SECRET` and
+  `DOMAIN=<your-domain>` (no `https://`).
+- `web/.env.local`: the Neon Auth values and the same `PAPEER_API_KEY`.
+
+**3. `Caddyfile`** in the project root:
+
+```
+{$DOMAIN} {
+    reverse_proxy web:3000
+}
+```
+
+**4. `docker-compose.override.yml`** in the project root:
+
+```yaml
+services:
+  web:
+    build:
+      args:
+        NEXT_PUBLIC_NEON_AUTH_URL: ${NEXT_PUBLIC_NEON_AUTH_URL}
+        NEON_AUTH_BASE_URL: ${NEON_AUTH_BASE_URL}
+        NEON_AUTH_COOKIE_SECRET: ${NEON_AUTH_COOKIE_SECRET}
+  caddy:
+    image: caddy:2
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+    depends_on: [web]
+    restart: unless-stopped
+volumes:
+  caddy_data:
+```
+
+**5. Start**
+
+```bash
+docker compose up -d --build
+docker compose ps
+docker compose logs --tail 20 caddy   # look for "certificate obtained successfully"
+```
+
+**6. Trust the domain in Neon**
+
+Neon Console → Auth settings → Domains → add `https://<your-domain>` (no trailing
+slash). This is not the "Custom domains" page under Functions.
+
+Plain `http://<ip>:3000` is not a working substitute: sign-in needs HTTPS.
